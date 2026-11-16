@@ -1,0 +1,131 @@
+-- ==========================================
+-- Script Name: StreamerTD Advanced Macro Hub
+-- Executor: Delta Compatible
+-- ==========================================
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- สถานะการทำงานระบบ
+local State = {
+    Recording = false,
+    AutoPlay = false,
+    AutoSell = false,
+    AutoSpeed = false,
+    AutoSkip = false,
+    UIVisible = true
+}
+
+-- เก็บข้อมูลตำแหน่งที่ผู้เล่นเคยกดวางจริง
+local RecordedPlacements = {}
+
+-- ระดับความยากของด่าน (เลือกได้: "Easy", "Normal", "Hard", "Insane", "Nightmare")
+local SelectedDifficulty = "Normal"
+
+-- พิกัดปุ่มอื่นๆ บนหน้าจอ
+local Coords = {
+    SellBtn  = Vector2.new(250, 450),  
+    SpeedBtn = Vector2.new(850, 120),  
+    SkipBtn  = Vector2.new(500, 80),
+    DiffBtn  = Vector2.new(600, 300)   -- พิกัดปุ่มเปิดเลือกระดับความยากในเกม
+}
+
+local function ClickAt(pos)
+    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 1)
+    task.wait(0.03)
+    VirtualInputManager:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 1)
+end
+
+local function PressKey(keyCode)
+    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    task.wait(0.03)
+    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+end
+
+-- สร้างหน้าต่าง UI หลัก
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+ScreenGui.Name = "StreamerTD_MacroGUI"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 260, 0, 410)
+MainFrame.Position = UDim2.new(0.05, 0, 0.15, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+-- ตกแต่งขอบมนและเงาให้ UI ดูพรีเมียม
+local UICorner = Instance.new("UICorner", MainFrame)
+UICorner.CornerRadius = UDim.new(0, 8)
+
+-- หัวข้อ UI
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+Title.TextColor3 = Color3.fromRGB(0, 255, 170)
+Title.Text = "StreamerTD Pro Hub"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 15
+
+local TitleCorner = Instance.new("UICorner", Title)
+TitleCorner.CornerRadius = UDim.new(0, 8)
+
+-- ปุ่มซ่อน/เปิด UI (ปุ่มลอยขนาดเล็กที่มุมจอหลักเพื่อให้กดเปิดกลับมาได้ถ้าเผลอซ่อน)
+local ToggleViewBtn = Instance.new("TextButton", ScreenGui)
+ToggleViewBtn.Size = UDim2.new(0, 45, 0, 45)
+ToggleViewBtn.Position = UDim2.new(0.01, 0, 0.1, 0)
+ToggleViewBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 170)
+ToggleViewBtn.TextColor3 = Color3.fromRGB(18, 18, 24)
+ToggleViewBtn.Text = "👁️"
+ToggleViewBtn.TextSize = 18
+ToggleViewBtn.Visible = false
+Instance.new("UICorner", ToggleViewBtn).CornerRadius = UDim.new(0, 22)
+
+-- ปุ่มซ่อน UI ในแถบหัวข้อ
+local HideBtn = Instance.new("TextButton", MainFrame)
+HideBtn.Size = UDim2.new(0, 30, 0, 30)
+HideBtn.Position = UDim2.new(1, -35, 0, 5)
+HideBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+HideBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+HideBtn.Text = "_"
+HideBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0, 5)
+
+HideBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    ToggleViewBtn.Visible = true
+end)
+
+ToggleViewBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    ToggleViewBtn.Visible = false
+end)
+
+-- 1. ฟังก์ชันบันทึกการวาง (Record Placement)
+local RecordBtn = Instance.new("TextButton", MainFrame)
+RecordBtn.Size = UDim2.new(0.9, 0, 0, 35)
+RecordBtn.Position = UDim2.new(0.05, 0, 0, 50)
+RecordBtn.BackgroundColor3 = Color3.fromRGB(50, 120, 200)
+RecordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RecordBtn.Font = Enum.Font.GothamBold
+RecordBtn.TextSize = 12
+RecordBtn.Text = "🔴 บันทึกจุดวาง (Record: OFF)"
+Instance.new("UICorner", RecordBtn).CornerRadius = UDim.new(0, 6)
+
+RecordBtn.MouseButton1Click:Connect(function()
+    State.Recording = not State.Recording
+    if State.Recording then
+        RecordedPlacements = {} -- ล้างค่าเก่าเพื่อเริ่มบันทึกใหม่
+        RecordBtn.Text = "🔴 กำลังฟังการวางของคุณ..."
+        RecordBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    else
+        RecordBtn.Text = "💾 บันทึกแล้ว (".. #RecordedPlacements .." จุด)"
+        RecordBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 75)
+    end
+end)
+
+-- ดักจับการคลิกหน้าจอเพื่อบันทึกพิกัดตอนกดวางจริง
+UserInputService.InputBegan:Connect(function(input)
+    if State.Recording and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.
